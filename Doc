@@ -1,0 +1,36 @@
+The Nuzima architechture supports these operations:
+
+ADD: Add two values
+MUL: Multiply two values
+SUB: Sub two values
+DIV: Divide two values
+MOD: Mod of two values
+NEG: Put the negation of a first register in a memory spot
+SHL: Shift left for bitwise operations
+SHR: Shift right for bitwise operations    
+AND: Perform binary and over two values
+OR: Perform binary or over two values
+XOR: Perform binary xor over two values
+NOT: Perform binary not over a values
+JMP: Jmp to an address of the code, support flags
+INT: Provoc an interruption
+PUSH: Push a value on the stack, support pushf and pushr
+POP: Pop a value of the stack, support popf and popr
+RET: Pop a value of the stack and perform jump
+CALL: Push the stack pointer and jmp
+MOV: Mov a value in a register or a memory zone
+READ: Read a value in the memory it in a register
+WRITE: Write a value in the memory
+CMP: Compare two values, actualise the condition flags
+CLEAR: Set all the registers at 0
+HALT: Stop the program
+TRACE: Print the current state of registers/memory (helpful for debugging in a VM).
+DUP: Duplicate the top value on the stack.
+SWAP: Swap the top two values on the stack.
+            
+And these Syscall:
+
+write (code 0): write a string into the file contained in R0
+read (code 1): read a string from the file contained in R0
+halt (code 2): finish the process
+        
