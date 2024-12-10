@@ -15,7 +15,8 @@ as_number!(
         R7,
         PC,
         COND,
-    }
+    },
+    derive(Clone, Copy)
 );
 
 impl TryFrom<&str> for Register {

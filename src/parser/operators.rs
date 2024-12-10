@@ -1,3 +1,4 @@
+#[derive(Clone, Copy)]
 pub enum Operator {
     Add,
     Sub,
@@ -5,6 +6,6 @@ pub enum Operator {
 
 impl Operator {
     pub fn is_operator_snippet(c: char) -> bool {
-        "-+".contains(&c)
+        "-+".contains(c)
     }
 }
