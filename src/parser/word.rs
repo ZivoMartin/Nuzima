@@ -1,10 +1,13 @@
 use super::{
-    errors::PreProcessingError, op_codes::OpCode, operators::Operator, registers::Register,
+    errors::{is_valid_label_name, PreProcessingError, Result},
+    op_codes::OpCode,
+    operators::Operator,
+    registers::Register,
     COMMENT_CHAR,
 };
 
 /// Word Separator are used to explicit the reason of the end of a word. For exemple a register can be ended via a space or a comma
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
 pub enum WordSeparator {
     /// ','
     Comma,
@@ -21,6 +24,8 @@ pub enum WordSeparator {
     /// End of the line, can be interpreted eather as end of file or '\n'
     #[default]
     EndOfLine,
+    /// A simple Digit
+    Digit,
     /// Every other character
     Others,
 }
@@ -42,6 +47,19 @@ impl WordSeparator {
             }
         }
     }
+}
+
+fn get_backslash_char(c: char) -> Result<char> {
+    Ok(match c {
+        'n' => '\n',
+        't' => '\t',
+        'r' => '\r',
+        '0' => '\0',
+        '\\' => '\\',
+        '\'' => '\'',
+        '\"' => '\"',
+        _ => return Err(PreProcessingError::InvalidBackSlash),
+    })
 }
 
 /// Represent the parsed content of a word
@@ -67,22 +85,17 @@ pub enum WordContent {
 }
 
 impl WordContent {
-    fn extract_number_from_single_quote(quotes: &str) -> Result<i32, PreProcessingError> {
+    /// This function takes a string representing a trimmed quote espression, such as 'a' and cast it into the ascii value of the quote. Support the backslash characters such as '\n'
+    fn extract_number_from_single_quote(quotes: &str) -> Result<i32> {
         let mut chars = quotes.chars();
         chars.next().unwrap();
-        let first_value = chars.next().unwrap();
+        let first_value = match chars.next() {
+            Some(c) => c,
+            None => return Err(PreProcessingError::InvalidSingleQuote),
+        };
         let res = if first_value == '\\' {
             match chars.next() {
-                Some(second_value) => Ok(match second_value {
-                    'n' => '\n',
-                    't' => '\t',
-                    'r' => '\r',
-                    '0' => '\0',
-                    '\\' => '\\',
-                    '\'' => '\'',
-                    '\"' => '\"',
-                    _ => return Err(PreProcessingError::InvalidBackSlash),
-                } as i32),
+                Some(second_value) => Ok(get_backslash_char(second_value)? as i32),
                 None => Err(PreProcessingError::InvalidBackSlash),
             }
         } else {
@@ -100,8 +113,11 @@ impl WordContent {
     }
 
     /// Will trim the pure content before processing
-    fn new(kind: WordKind, pure_content: &str) -> Result<Self, PreProcessingError> {
+    fn new(kind: WordKind, pure_content: &str) -> Result<Self> {
         let pure_content = pure_content.trim();
+        if pure_content.is_empty() || pure_content == "\n" {
+            return Ok(Self::Empty);
+        }
         Ok(match kind {
             WordKind::Unknown => {
                 if let Ok(reg) = Register::try_from(pure_content) {
@@ -109,14 +125,25 @@ impl WordContent {
                 } else if let Ok(opcode) = OpCode::try_from(pure_content) {
                     WordContent::OpCode(opcode)
                 } else {
-                    WordContent::Label(pure_content.to_string())
+                    if is_valid_label_name(pure_content) {
+                        WordContent::Label(pure_content.to_string())
+                    } else {
+                        return Err(PreProcessingError::InvalidWord);
+                    }
                 }
             }
             WordKind::LabelDeclaration => {
-                let label = pure_content[..pure_content.len() - 1].to_string(); // We are removing the colon
-                WordContent::LabelDeclaration(label)
+                if is_valid_label_name(pure_content) {
+                    let label = pure_content[..pure_content.len() - 1].to_string(); // We are removing the colon
+                    WordContent::LabelDeclaration(label)
+                } else {
+                    return Err(PreProcessingError::InvalidLabelName);
+                }
             }
-            WordKind::Number => WordContent::Number(pure_content.parse::<i32>().unwrap()),
+            WordKind::Number => WordContent::Number(match pure_content.parse::<i32>() {
+                Ok(x) => x,
+                Err(_) => return Err(PreProcessingError::InvalidNumber),
+            }),
             WordKind::DoubleQuote => {
                 WordContent::Str(pure_content[1..pure_content.len() - 1].to_string())
             }
@@ -172,17 +199,45 @@ enum WordKind {
 impl WordKind {
     fn valid_separator_list(self) -> Vec<WordSeparator> {
         match self {
-            Unknown => vec![Word],
-            LabelDeclaration => true,
-            Number => true,
-            DoubleQuote => true,
-            SingleQuote => true,
+            WordKind::Unknown => vec![
+                WordSeparator::Comma,
+                WordSeparator::Space,
+                WordSeparator::Operator,
+                WordSeparator::SingleQuote,
+                WordSeparator::DoubleQuote,
+                WordSeparator::EndOfLine,
+            ],
+            WordKind::LabelDeclaration => vec![WordSeparator::Colon],
+            WordKind::Number => vec![
+                WordSeparator::Comma,
+                WordSeparator::Space,
+                WordSeparator::Operator,
+                WordSeparator::SingleQuote,
+                WordSeparator::DoubleQuote,
+                WordSeparator::EndOfLine,
+                WordSeparator::Others, // NOTE: A number is only allow to read digit
+            ],
+            WordKind::DoubleQuote => vec![WordSeparator::DoubleQuote],
+            WordKind::SingleQuote => vec![WordSeparator::SingleQuote], // As quotes are a bit special, we have to assure before ending the computation that the character was not just after a backslash
         }
     }
 }
 
+/// The from char allow the parser to guess what kind of word it is going to parse
+impl TryFrom<char> for WordKind {
+    type Error = PreProcessingError;
+    fn try_from(c: char) -> Result<Self> {
+        Ok(match c {
+            '\'' => Self::SingleQuote,
+            '\"' => Self::DoubleQuote,
+            _ if c.is_ascii_digit() => Self::Number,
+            _ if c.is_alphabetic() => Self::Unknown,
+            _ => return Err(PreProcessingError::InvalidFirstChar),
+        })
+    }
+}
+
 /// Charged to build a word, will eventually output a word
-#[derive(Default)]
 pub struct WordBuilder {
     /// The current litteral content of the word
     pure_content: String,
@@ -191,10 +246,22 @@ pub struct WordBuilder {
 }
 
 impl WordBuilder {
-    pub fn new(first_char: char, chars: &mut impl Iterator<Item = char>) -> Self {
-        let mut word = Self::default();
-        word.add_char(first_char, chars);
-        word
+    pub fn new(first_char: char) -> Result<Self> {
+        Ok(Self {
+            pure_content: String::from(first_char),
+            kind: WordKind::try_from(first_char)?,
+        })
+    }
+
+    fn init(&mut self, first_char: char) -> Result<()> {
+        self.pure_content = String::from(first_char);
+        self.kind = WordKind::try_from(first_char)?;
+        Ok(())
+    }
+
+    pub fn end_of_file(&mut self) -> Result<Word> {
+        self.kind.check_valid_ending_word()?;
+        self.extract('\0', WordSeparator::EndOfLine)
     }
 
     /// Return true if the trimed word starts with a quote, a single or double one
@@ -203,22 +270,48 @@ impl WordBuilder {
     }
 
     /// This funtion extact the built word and clean the builder itself
-    pub fn extract(&mut self, sep: WordSeparator) -> Result<Word, PreProcessingError> {
-        let kind = self.kind;
-        self.kind = WordKind::Unknown;
-        Ok(Word::new(
-            WordContent::new(kind, &self.pure_content)?,
+    pub fn extract(&mut self, sep: WordSeparator, last_char: char) -> Result<Word> {
+        let word = Word::new(
+            WordContent::new(self.kind, &self.pure_content)?,
             self.pure_content.drain(..).collect::<String>(),
             sep,
-        ))
+        );
+        self.init(last_char)?; // The last char of the computed word is fist of the next one
+        Ok(word)
     }
 
-    /// Takes in parameter the a separator and end the construction by extracting the word if it is necessary
-    fn get_request_from_sep(&mut self, sep: WordSeparator) -> WordRequest {
-        todo!()
+    /// Takes in parameter a separator and end the construction by extracting the word if it is necessary
+    fn get_request_from_sep(&mut self, c: char, sep: WordSeparator) -> Result<WordRequest> {
+        Ok(if self.kind.valid_separator_list().contains(&sep) {
+            let word = self.extract(sep, c)?;
+            if sep == WordSeparator::EndOfLine {
+                WordRequest::PushLine(word)
+            } else {
+                WordRequest::PushWord(word)
+            }
+        } else {
+            WordRequest::Continue
+        })
     }
 
-    pub fn add_char(&mut self, c: char, chars: &mut impl Iterator<Item = char>) -> WordRequest {
+    fn previous_was_backslash(&self) -> bool {
+        let mut chars = self.pure_content.chars().rev();
+        self.pure_content.len() != 0
+            && chars.next().unwrap() == '\\'
+            && (self.pure_content.len() == 1 || chars.next().unwrap() != '\\')
+    }
+
+    fn add_backslash_char_in_quote_context(&mut self, c: char) -> Result<()> {
+        get_backslash_char(c)?;
+        self.pure_content.push(c);
+        Ok(())
+    }
+
+    pub fn add_char(
+        &mut self,
+        c: char,
+        chars: &mut impl Iterator<Item = char>,
+    ) -> Result<WordRequest> {
         let is_quote = self.is_quote();
         if c == COMMENT_CHAR && !is_quote {
             while let Some(c) = chars.next() {
@@ -227,15 +320,18 @@ impl WordBuilder {
                 }
             }
         }
+
+        if is_quote && self.previous_was_backslash() {
+            self.add_backslash_char_in_quote_context(c)?;
+            return Ok(WordRequest::Continue);
+        }
         self.pure_content.push(c);
 
         if self.kind == WordKind::Unknown && c == ':' {
             self.kind = WordKind::LabelDeclaration;
-            return WordRequest::Continue;
         }
-
         let sep = WordSeparator::get(c);
-        self.get_request_from_sep(sep)
+        self.get_request_from_sep(c, sep)
     }
 }
 
