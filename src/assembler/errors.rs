@@ -1,4 +1,5 @@
-pub enum PreProcessingError {
+#[derive(Debug)]
+pub enum SyntaxError {
     EmptyText,
     InvalidSingleQuote,
     InvalidBackSlash,
@@ -14,7 +15,7 @@ pub enum PreProcessingError {
     InvalidFirstChar,
 }
 
-pub type Result<T> = core::result::Result<T, PreProcessingError>;
+pub type Result<T> = core::result::Result<T, SyntaxError>;
 
 /// Returns true if the given name can be a label name. For now, only empty name are forbiddent.
 pub fn is_valid_label_name(name: &str) -> bool {

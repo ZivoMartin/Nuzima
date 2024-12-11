@@ -1,5 +1,5 @@
 use super::{
-    errors::{is_valid_label_name, PreProcessingError, Result},
+    errors::{is_valid_label_name, Result, SyntaxError},
     op_codes::OpCode,
     operators::Operator,
     registers::Register,
@@ -7,7 +7,7 @@ use super::{
 };
 
 /// Word Separator are used to explicit the reason of the end of a word. For exemple a register can be ended via a space or a comma
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum WordSeparator {
     /// ','
     Comma,
@@ -38,13 +38,10 @@ impl WordSeparator {
             '\'' => Self::SingleQuote,
             '\"' => Self::DoubleQuote,
             '\n' => Self::EndOfLine,
-            _ => {
-                if Operator::is_operator_snippet(c) {
-                    Self::Operator
-                } else {
-                    Self::Others
-                }
-            }
+            ':' => Self::Colon,
+            _ if c.is_ascii_digit() => Self::Digit,
+            _ if Operator::is_operator_snippet(c) => Self::Operator,
+            _ => Self::Others,
         }
     }
 }
@@ -58,12 +55,12 @@ fn get_backslash_char(c: char) -> Result<char> {
         '\\' => '\\',
         '\'' => '\'',
         '\"' => '\"',
-        _ => return Err(PreProcessingError::InvalidBackSlash),
+        _ => return Err(SyntaxError::InvalidBackSlash),
     })
 }
 
 /// Represent the parsed content of a word
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub enum WordContent {
     /// Represents an empty word
     #[default]
@@ -84,71 +81,81 @@ pub enum WordContent {
     Str(String),
 }
 
+/// If s is a quote, it will replace the backslash character by its real value. It can fail if there is an invalid backslash character, but as this case is checks before, it may not.
+fn trim_sep(kind: WordKind, s: &str) -> Result<String> {
+    Ok(if kind.is_quote() {
+        let mut res = String::new();
+        let mut chars = s.chars();
+        while let Some(c) = chars.next() {
+            res.push(if c == '\\' {
+                match chars.next() {
+                    Some(c) => get_backslash_char(c)?,
+                    None => return Err(SyntaxError::InvalidBackSlash),
+                }
+            } else {
+                c
+            });
+        }
+        res
+    } else {
+        if s.len() < 3 { "" } else { &s[1..s.len() - 1] }.to_string()
+    })
+}
+
 impl WordContent {
-    /// This function takes a string representing a trimmed quote espression, such as 'a' and cast it into the ascii value of the quote. Support the backslash characters such as '\n'
+    /// This function takes a string representing a trimmed quote espression, such as 'a' and cast it into the ascii value of the quote. This function assume that the given quote is valid and throw an error if not. A valid quote here is a string of three elements composed of a first quote, then a value and a quote.
     fn extract_number_from_single_quote(quotes: &str) -> Result<i32> {
         let mut chars = quotes.chars();
         chars.next().unwrap();
-        let first_value = match chars.next() {
-            Some(c) => c,
-            None => return Err(PreProcessingError::InvalidSingleQuote),
+        let value = match chars.next() {
+            Some(c) => Ok(c as i32),
+            None => return Err(SyntaxError::InvalidSingleQuote),
         };
-        let res = if first_value == '\\' {
-            match chars.next() {
-                Some(second_value) => Ok(get_backslash_char(second_value)? as i32),
-                None => Err(PreProcessingError::InvalidBackSlash),
-            }
-        } else {
-            if "\'\"".contains(first_value) {
-                Err(PreProcessingError::BackSlashNeeded)
-            } else {
-                Ok(first_value as i32)
-            }
-        };
+
         if chars.next() != Some('\'') || chars.next().is_some() {
-            Err(PreProcessingError::InvalidSingleQuote)
+            Err(SyntaxError::InvalidSingleQuote)
         } else {
-            res
+            value
         }
     }
 
     /// Will trim the pure content before processing
     fn new(kind: WordKind, pure_content: &str) -> Result<Self> {
-        let pure_content = pure_content.trim();
-        if pure_content.is_empty() || pure_content == "\n" {
+        let pure_content = trim_sep(kind, pure_content)?;
+        if pure_content.is_empty() {
             return Ok(Self::Empty);
         }
         Ok(match kind {
             WordKind::Unknown => {
-                if let Ok(reg) = Register::try_from(pure_content) {
+                if let Ok(reg) = Register::try_from(&pure_content as &str) {
                     WordContent::Register(reg)
-                } else if let Ok(opcode) = OpCode::try_from(pure_content) {
+                } else if let Ok(opcode) = OpCode::try_from(&pure_content as &str) {
                     WordContent::OpCode(opcode)
                 } else {
-                    if is_valid_label_name(pure_content) {
+                    if is_valid_label_name(&pure_content) {
                         WordContent::Label(pure_content.to_string())
                     } else {
-                        return Err(PreProcessingError::InvalidWord);
+                        return Err(SyntaxError::InvalidWord);
                     }
                 }
             }
             WordKind::LabelDeclaration => {
-                if is_valid_label_name(pure_content) {
+                if is_valid_label_name(&pure_content) {
                     let label = pure_content[..pure_content.len() - 1].to_string(); // We are removing the colon
                     WordContent::LabelDeclaration(label)
                 } else {
-                    return Err(PreProcessingError::InvalidLabelName);
+                    return Err(SyntaxError::InvalidLabelName);
                 }
             }
             WordKind::Number => WordContent::Number(match pure_content.parse::<i32>() {
                 Ok(x) => x,
-                Err(_) => return Err(PreProcessingError::InvalidNumber),
+                Err(_) => return Err(SyntaxError::InvalidNumber),
             }),
             WordKind::DoubleQuote => {
                 WordContent::Str(pure_content[1..pure_content.len() - 1].to_string())
             }
             WordKind::SingleQuote => {
-                WordContent::Number(Self::extract_number_from_single_quote(pure_content)?)
+                WordContent::Number(Self::extract_number_from_single_quote(&pure_content)?)
             }
         })
     }
@@ -158,11 +165,23 @@ impl WordContent {
 #[derive(Default, Clone)]
 pub struct Word {
     /// The litteral content of the word, without modification
-    pure_content: String,
+    pub pure_content: String,
     /// The important content of the word, for exemple the word '0' may be represented as WordContent::Number(48)
     content: WordContent,
     /// The reason why the word creation has ended. Some kind of word will be robust regarding certain separator, for exemple a word of type Str can only have a DoubleQote separator
     sep: WordSeparator,
+}
+
+use std::fmt::{Debug, Error as FmtErr, Formatter};
+
+impl Debug for Word {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::result::Result<(), FmtErr> {
+        write!(
+            f,
+            "Word content: {:?}, word sep: {:?}, word pure_content: \"{}\"",
+            self.content, self.sep, self.pure_content
+        )
+    }
 }
 
 impl Word {
@@ -197,10 +216,15 @@ enum WordKind {
 }
 
 impl WordKind {
+    /// Return true if the word is a between quotes
+    pub fn is_quote(self) -> bool {
+        self == WordKind::DoubleQuote || self == WordKind::SingleQuote
+    }
+
     fn check_valid_ending_word(self) -> Result<()> {
         match self {
-            Self::DoubleQuote => Err(PreProcessingError::DoubleQuoteNeverEnded),
-            Self::SingleQuote => Err(PreProcessingError::SingleQuoteNeverEnded),
+            Self::DoubleQuote => Err(SyntaxError::DoubleQuoteNeverEnded),
+            Self::SingleQuote => Err(SyntaxError::SingleQuoteNeverEnded),
             _ => Ok(()),
         }
     }
@@ -233,14 +257,14 @@ impl WordKind {
 
 /// The from char allow the parser to guess what kind of word it is going to parse
 impl TryFrom<char> for WordKind {
-    type Error = PreProcessingError;
+    type Error = SyntaxError;
     fn try_from(c: char) -> Result<Self> {
         Ok(match c {
             '\'' => Self::SingleQuote,
             '\"' => Self::DoubleQuote,
             _ if c.is_ascii_digit() => Self::Number,
-            _ if c.is_alphabetic() => Self::Unknown,
-            _ => return Err(PreProcessingError::InvalidFirstChar),
+            _ if c.is_alphabetic() || ", :\n\0".contains(c) => Self::Unknown,
+            _ => return Err(SyntaxError::InvalidFirstChar),
         })
     }
 }
@@ -254,27 +278,26 @@ pub struct WordBuilder {
 }
 
 impl WordBuilder {
-    pub fn new(first_char: char) -> Result<Self> {
+    pub fn new() -> Result<Self> {
         Ok(Self {
-            pure_content: String::from(first_char),
-            kind: WordKind::try_from(first_char)?,
+            pure_content: String::from('\0'),
+            kind: WordKind::try_from('\0')?,
         })
     }
 
     fn init(&mut self, first_char: char) -> Result<()> {
         self.pure_content = String::from(first_char);
-        self.kind = WordKind::try_from(first_char)?;
+        if self.kind.is_quote() {
+            self.kind = WordKind::Unknown
+        } else {
+            self.kind = WordKind::try_from(first_char)?
+        }
         Ok(())
     }
 
     pub fn end_of_file(&mut self) -> Result<Word> {
         self.kind.check_valid_ending_word()?;
         self.extract(WordSeparator::EndOfLine, '\0')
-    }
-
-    /// Return true if the trimed word starts with a quote, a single or double one
-    pub fn is_quote(&self) -> bool {
-        self.kind == WordKind::DoubleQuote || self.kind == WordKind::SingleQuote
     }
 
     /// This funtion extact the built word and clean the builder itself
@@ -315,12 +338,22 @@ impl WordBuilder {
         Ok(())
     }
 
+    fn push_char(&mut self, c: char) {
+        self.pure_content.push(c);
+        if c == ':' && self.kind == WordKind::Unknown {
+            self.kind = WordKind::LabelDeclaration;
+        }
+        if self.kind == WordKind::Unknown && self.pure_content.len() == 2 && c.is_ascii_digit() {
+            self.kind = WordKind::Number;
+        }
+    }
+
     pub fn add_char(
         &mut self,
         c: char,
         chars: &mut impl Iterator<Item = char>,
     ) -> Result<WordRequest> {
-        let is_quote = self.is_quote();
+        let is_quote = self.kind.is_quote();
         if c == COMMENT_CHAR && !is_quote {
             while let Some(c) = chars.next() {
                 if c == '\n' {
@@ -333,11 +366,8 @@ impl WordBuilder {
             self.add_backslash_char_in_quote_context(c)?;
             return Ok(WordRequest::Continue);
         }
-        self.pure_content.push(c);
 
-        if self.kind == WordKind::Unknown && c == ':' {
-            self.kind = WordKind::LabelDeclaration;
-        }
+        self.push_char(c);
         let sep = WordSeparator::get(c);
         self.get_request_from_sep(c, sep)
     }

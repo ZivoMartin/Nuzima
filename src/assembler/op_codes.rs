@@ -33,7 +33,7 @@ as_number!(
         DUP,
         SWAP,
     },
-    derive(Clone, Copy)
+    derive(Clone, Copy, Debug)
 );
 
 impl TryFrom<&str> for OpCode {
