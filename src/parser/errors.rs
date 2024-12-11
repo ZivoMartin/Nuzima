@@ -4,6 +4,7 @@ pub enum PreProcessingError {
     InvalidBackSlash,
     BackSlashNeeded,
     DoubleQuoteNeverEnded,
+    SingleQuoteNeverEnded,
     EndOfLine,
     InvalidRegister,
     InvalidOpCode,

@@ -71,6 +71,20 @@ pub fn pre_processing(text: &str) -> Result<PreProcessing> {
     while let Some(c) = chars.next() {
         pre_processor.consume(c, &mut chars)?;
     }
+
     pre_processor.end_of_file()?;
     Ok(PreProcessing::from(pre_processor))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+
+    #[test]
+    fn it_works() {
+        let mut content = String::new();
+        let f = File::open("./exemples/test.nzm").unwrap();
+        f.read_to_string(&mut content).unwrap();
+    }
 }

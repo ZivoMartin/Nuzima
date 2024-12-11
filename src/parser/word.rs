@@ -197,6 +197,14 @@ enum WordKind {
 }
 
 impl WordKind {
+    fn check_valid_ending_word(self) -> Result<()> {
+        match self {
+            Self::DoubleQuote => Err(PreProcessingError::DoubleQuoteNeverEnded),
+            Self::SingleQuote => Err(PreProcessingError::SingleQuoteNeverEnded),
+            _ => Ok(()),
+        }
+    }
+
     fn valid_separator_list(self) -> Vec<WordSeparator> {
         match self {
             WordKind::Unknown => vec![
@@ -261,7 +269,7 @@ impl WordBuilder {
 
     pub fn end_of_file(&mut self) -> Result<Word> {
         self.kind.check_valid_ending_word()?;
-        self.extract('\0', WordSeparator::EndOfLine)
+        self.extract(WordSeparator::EndOfLine, '\0')
     }
 
     /// Return true if the trimed word starts with a quote, a single or double one
