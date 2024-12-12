@@ -1,127 +1,127 @@
 mod errors;
+mod line;
 mod op_codes;
-mod operators;
-mod pre_processor;
 mod registers;
 mod word;
 
 pub const COMMENT_CHAR: char = ';';
 
-use super::{
-    errors::{Result, SyntaxError},
-    word::{Line, WordBuilder, WordRequest},
-};
+use errors::{Result, SyntaxError};
+use line::Line;
+use word::{Word, WordBuilder, WordContent, WordRequest};
+
 use std::collections::HashMap;
 
-#[derive(Default)]
-pub struct PreProcessing {
-    /// Each element of the vector can be either an instruction or a label def
-    instructions: Vec<Line>,
-    /// Link a label to its line
-    labels: HashMap<String, usize>,
-}
-
-use std::fmt::{Debug, Error as FmtErr, Formatter};
-
-impl Debug for PreProcessing {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::result::Result<(), FmtErr> {
-        write!(
-            f,
-            "Pure content:\n{}",
-            self.instructions
+fn display_lines(lines: &Vec<Line>) {
+    println!(
+        "Pure content:\n{}\n",
+        lines
+            .iter()
+            .map(|l| l
+                .get()
                 .iter()
-                .map(|l| l
-                    .iter()
-                    .map(|w| w.pure_content[..w.pure_content.len() - 1].to_string())
-                    .collect::<String>())
-                .collect::<String>()
-        );
-        write!(
-            f,
-            "Word parsing:\n{}",
-            self.instructions
+                .map(|w| w.pure_content[..w.pure_content.len() - 1].to_string())
+                .collect::<String>())
+            .collect::<String>()
+    );
+    println!(
+        "Words parsing:\n{}",
+        lines
+            .iter()
+            .map(|l| l
+                .get()
                 .iter()
-                .map(|l| l.iter().map(|w| format!("{w:?}\n")).collect::<String>())
-                .collect::<String>()
-        )
-    }
+                .map(|w| format!("{w:?}\n"))
+                .collect::<String>())
+            .collect::<String>()
+    )
 }
 
-impl From<PreProcessingCash> for PreProcessing {
-    fn from(cash: PreProcessingCash) -> Self {
-        Self {
-            instructions: cash.instructions,
-            labels: cash.labels,
-        }
-    }
-}
-
-/// Used to computed the PrePocessing, contains working field
-pub struct PreProcessingCash {
+/// Used to store differents word, used after to generate the biinary
+pub struct Assembler {
     /// The current computed word
     word_builder: WordBuilder,
     /// The current computed line
-    current_line: Line,
-    /// Each element of the vector can be either an instruction or a label def
+    current_line: Vec<Word>,
+    /// Each element of the vector is an instruction composed of different word
     instructions: Vec<Line>,
-    /// Link a label to its line
+    /// Link a label to its line, also used to verify the existence of labels when parsing the code
     labels: HashMap<String, usize>,
 }
 
-impl PreProcessingCash {
+impl Assembler {
     fn new() -> Result<Self> {
-        Ok(PreProcessingCash {
+        Ok(Self {
             word_builder: WordBuilder::new()?,
-            current_line: Line::new(),
+            current_line: Vec::new(),
             instructions: Vec::new(),
             labels: HashMap::new(),
         })
     }
 
+    fn push_word(&mut self, word: Word) -> Result<()> {
+        if let WordContent::LabelDeclaration(lab) = &word.content {
+            if self
+                .labels
+                .insert(lab.to_string(), self.instructions.len())
+                .is_some()
+            {
+                return Err(SyntaxError::LabelDeclaredTwice);
+            }
+        }
+        self.current_line.push(word);
+
+        Ok(())
+    }
+
+    fn push_current_line(&mut self) -> Result<()> {
+        let line = self.current_line.drain(..).collect::<Vec<_>>();
+        self.instructions.push(Line::try_from(line)?);
+        Ok(())
+    }
+
     fn consume(&mut self, c: char, chars: &mut impl Iterator<Item = char>) -> Result<()> {
         match self.word_builder.add_char(c, chars)? {
             WordRequest::PushLine(word) => {
-                self.current_line.push(word);
-                let line = self.current_line.drain(..).collect::<Vec<_>>();
-                self.instructions.push(line);
+                self.push_word(word)?;
+                self.push_current_line()?
             }
-            WordRequest::PushWord(word) => self.current_line.push(word),
+            WordRequest::PushWord(word) => self.push_word(word)?,
             WordRequest::Continue => (),
         }
         Ok(())
     }
 
-    fn end_of_file(&mut self) -> Result<()> {
+    fn conclude(&mut self) -> Result<()> {
         self.current_line.push(self.word_builder.end_of_file()?);
-        Ok(())
+        self.push_current_line()?;
+        if self.instructions.iter().any(|line| {
+            line.get().iter().any(|word: &Word| {
+                if let WordContent::Label(lab) = &word.content {
+                    !self.labels.contains_key(lab)
+                } else {
+                    false
+                }
+            })
+        }) {
+            Err(SyntaxError::LabelIsNotDeclared)
+        } else {
+            Ok(())
+        }
     }
 }
 
-pub fn pre_processing(text: &str) -> Result<PreProcessing> {
+pub fn assemble(text: &str) -> Result<()> {
     if text.is_empty() {
         return Err(SyntaxError::EmptyText);
     }
     let mut chars = text.chars();
-    let mut pre_processor = PreProcessingCash::new()?;
+    let mut assembler = Assembler::new()?;
     while let Some(c) = chars.next() {
-        pre_processor.consume(c, &mut chars)?;
+        assembler.consume(c, &mut chars)?;
     }
 
-    pre_processor.end_of_file()?;
-    Ok(PreProcessing::from(pre_processor))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::pre_processor::pre_processing;
-    use std::{fs::File, io::Read};
-
-    #[test]
-    fn it_works() {
-        let mut content = String::new();
-        let mut f = File::open("./exemples/test.nzm").unwrap();
-        f.read_to_string(&mut content).unwrap();
-
-        println!("{:?}", pre_processing(&content));
-    }
+    assembler.conclude()?;
+    display_lines(&assembler.instructions);
+    Ok(())
 }

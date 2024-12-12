@@ -1,6 +1,6 @@
 use crate::as_number;
 
-use super::errors::PreProcessingError;
+use super::errors::SyntaxError;
 
 as_number!(
     u8,
@@ -37,7 +37,7 @@ as_number!(
 );
 
 impl TryFrom<&str> for OpCode {
-    type Error = PreProcessingError;
+    type Error = SyntaxError;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         Ok(match s {
@@ -68,7 +68,7 @@ impl TryFrom<&str> for OpCode {
             "trace" => OpCode::TRACE,
             "dup" => OpCode::DUP,
             "swap" => OpCode::SWAP,
-            _ => return Err(PreProcessingError::InvalidOpCode),
+            _ => return Err(SyntaxError::InvalidOpCode),
         })
     }
 }

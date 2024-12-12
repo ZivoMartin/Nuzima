@@ -1,7 +1,6 @@
 use super::{
     errors::{is_valid_label_name, Result, SyntaxError},
     op_codes::OpCode,
-    operators::Operator,
     registers::Register,
     COMMENT_CHAR,
 };
@@ -13,8 +12,6 @@ pub enum WordSeparator {
     Comma,
     /// ' '
     Space,
-    /// Any allowed operator
-    Operator,
     /// '\''
     SingleQuote,
     /// To end a label declaration
@@ -40,7 +37,6 @@ impl WordSeparator {
             '\n' => Self::EndOfLine,
             ':' => Self::Colon,
             _ if c.is_ascii_digit() => Self::Digit,
-            _ if Operator::is_operator_snippet(c) => Self::Operator,
             _ => Self::Others,
         }
     }
@@ -75,8 +71,6 @@ pub enum WordContent {
     OpCode(OpCode),
     /// Will represent a valid Register
     Register(Register),
-    /// Can represent an operator via the operator type
-    Operator(Operator),
     /// Represent a litteral string (between double quotes)
     Str(String),
 }
@@ -167,7 +161,7 @@ pub struct Word {
     /// The litteral content of the word, without modification
     pub pure_content: String,
     /// The important content of the word, for exemple the word '0' may be represented as WordContent::Number(48)
-    content: WordContent,
+    pub content: WordContent,
     /// The reason why the word creation has ended. Some kind of word will be robust regarding certain separator, for exemple a word of type Str can only have a DoubleQote separator
     sep: WordSeparator,
 }
@@ -234,7 +228,6 @@ impl WordKind {
             WordKind::Unknown => vec![
                 WordSeparator::Comma,
                 WordSeparator::Space,
-                WordSeparator::Operator,
                 WordSeparator::SingleQuote,
                 WordSeparator::DoubleQuote,
                 WordSeparator::EndOfLine,
@@ -243,7 +236,6 @@ impl WordKind {
             WordKind::Number => vec![
                 WordSeparator::Comma,
                 WordSeparator::Space,
-                WordSeparator::Operator,
                 WordSeparator::SingleQuote,
                 WordSeparator::DoubleQuote,
                 WordSeparator::EndOfLine,
@@ -372,5 +364,3 @@ impl WordBuilder {
         self.get_request_from_sep(c, sep)
     }
 }
-
-pub type Line = Vec<Word>;
