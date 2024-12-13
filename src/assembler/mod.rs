@@ -6,7 +6,7 @@ mod word;
 
 pub const COMMENT_CHAR: char = ';';
 
-use errors::{Result, SyntaxError};
+use errors::{cast_result, SyntaxErrorKind, SyntaxResult};
 use line::Line;
 use word::{Word, WordBuilder, WordContent, WordRequest};
 
@@ -50,23 +50,26 @@ pub struct Assembler {
 }
 
 impl Assembler {
-    fn new() -> Result<Self> {
+    fn new() -> SyntaxResult<Self> {
         Ok(Self {
-            word_builder: WordBuilder::new()?,
+            word_builder: cast_result(WordBuilder::new(), 0)?,
             current_line: Vec::new(),
             instructions: Vec::new(),
             labels: HashMap::new(),
         })
     }
 
-    fn push_word(&mut self, word: Word) -> Result<()> {
+    fn push_word(&mut self, word: Word) -> SyntaxResult<()> {
         if let WordContent::LabelDeclaration(lab) = &word.content {
             if self
                 .labels
                 .insert(lab.to_string(), self.instructions.len())
                 .is_some()
             {
-                return Err(SyntaxError::LabelDeclaredTwice);
+                return cast_result(
+                    Err(SyntaxErrorKind::LabelDeclaredTwice(lab.to_string())),
+                    self.line(),
+                );
             }
         }
         self.current_line.push(word);
@@ -74,14 +77,19 @@ impl Assembler {
         Ok(())
     }
 
-    fn push_current_line(&mut self) -> Result<()> {
+    fn push_current_line(&mut self) -> SyntaxResult<()> {
         let line = self.current_line.drain(..).collect::<Vec<_>>();
-        self.instructions.push(Line::try_from(line)?);
+        self.instructions
+            .push(cast_result(Line::try_from(line), self.line())?);
         Ok(())
     }
 
-    fn consume(&mut self, c: char, chars: &mut impl Iterator<Item = char>) -> Result<()> {
-        match self.word_builder.add_char(c, chars)? {
+    fn line(&self) -> usize {
+        self.instructions.len() + 1
+    }
+
+    fn consume(&mut self, c: char, chars: &mut impl Iterator<Item = char>) -> SyntaxResult<()> {
+        match cast_result(self.word_builder.add_char(c, chars), self.line())? {
             WordRequest::PushLine(word) => {
                 self.push_word(word)?;
                 self.push_current_line()?
@@ -92,28 +100,36 @@ impl Assembler {
         Ok(())
     }
 
-    fn conclude(&mut self) -> Result<()> {
-        self.current_line.push(self.word_builder.end_of_file()?);
+    fn conclude(&mut self) -> SyntaxResult<()> {
+        self.current_line
+            .push(cast_result(self.word_builder.end_of_file(), self.line())?);
         self.push_current_line()?;
-        if self.instructions.iter().any(|line| {
-            line.get().iter().any(|word: &Word| {
+        for (i, line) in self.instructions.iter().enumerate() {
+            if let Some(lab) = line.get().iter().find(|word| {
                 if let WordContent::Label(lab) = &word.content {
                     !self.labels.contains_key(lab)
                 } else {
                     false
                 }
-            })
-        }) {
-            Err(SyntaxError::LabelIsNotDeclared)
-        } else {
-            Ok(())
+            }) {
+                match &lab.content {
+                    WordContent::Label(lab) => {
+                        return cast_result(
+                            Err(SyntaxErrorKind::LabelIsNotDeclared(lab.to_string())),
+                            i + 1,
+                        )
+                    }
+                    _ => unreachable!(),
+                }
+            }
         }
+        Ok(())
     }
 }
 
-pub fn assemble(text: &str) -> Result<()> {
+pub fn assemble(text: &str) -> SyntaxResult<()> {
     if text.is_empty() {
-        return Err(SyntaxError::EmptyText);
+        return cast_result(Err(SyntaxErrorKind::EmptyText), 0);
     }
     let mut chars = text.chars();
     let mut assembler = Assembler::new()?;

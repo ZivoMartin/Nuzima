@@ -1,6 +1,6 @@
 use crate::as_number;
 
-use super::errors::SyntaxError;
+use super::errors::SyntaxErrorKind;
 
 as_number!(
     u8,
@@ -20,7 +20,7 @@ as_number!(
 );
 
 impl TryFrom<&str> for Register {
-    type Error = SyntaxError;
+    type Error = SyntaxErrorKind;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         Ok(match s {
@@ -34,7 +34,7 @@ impl TryFrom<&str> for Register {
             "r7" => Register::R7,
             "rpc" => Register::PC,
             "rcond" => Register::COND,
-            _ => return Err(SyntaxError::InvalidRegister),
+            _ => return Err(SyntaxErrorKind::InvalidRegister(s.to_string())),
         })
     }
 }

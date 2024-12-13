@@ -1,6 +1,9 @@
 use crate::as_number;
 
-use super::errors::SyntaxError;
+use super::{
+    errors::{SyntaxErrorKind, SyntaxResultKind},
+    word::Word,
+};
 
 as_number!(
     u8,
@@ -37,7 +40,7 @@ as_number!(
 );
 
 impl TryFrom<&str> for OpCode {
-    type Error = SyntaxError;
+    type Error = SyntaxErrorKind;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         Ok(match s {
@@ -68,7 +71,56 @@ impl TryFrom<&str> for OpCode {
             "trace" => OpCode::TRACE,
             "dup" => OpCode::DUP,
             "swap" => OpCode::SWAP,
-            _ => return Err(SyntaxError::InvalidOpCode),
+            _ => return Err(SyntaxErrorKind::InvalidOpCode(s.to_string())),
         })
+    }
+}
+
+impl OpCode {
+    pub fn check_compatibility(self, line: &[Word]) -> SyntaxResultKind<()> {
+        match self {
+            Self::MOD
+            | Self::ADD
+            | Self::MUL
+            | Self::SUB
+            | Self::DIV
+            | Self::SHL
+            | Self::SHR
+            | Self::AND
+            | Self::OR
+            | Self::XOR
+            | Self::NOT
+            | Self::CMP
+            | Self::READ
+            | Self::WRITE
+            | Self::MOV
+                if line.len() != 2 || !line[0].is_reg() || !line[1].is_reg_or_imm() =>
+            {
+                Err(SyntaxErrorKind::ExpectedRegImmOrReg(self))
+            }
+
+            Self::HALT
+            | Self::SWAP
+            | Self::DUP
+            | Self::CLEAR
+            | Self::TRACE
+            | Self::NEG
+            | Self::RET
+                if line.len() != 0 =>
+            {
+                Err(SyntaxErrorKind::ExpectedNothing(self))
+            } // Nothing
+
+            Self::INT | Self::JMP | Self::CALL | Self::PUSH
+                if line.len() != 1 || !line[0].is_reg_or_imm() =>
+            {
+                Err(SyntaxErrorKind::ExpectedRegOrImm(self))
+            } // reg || imm
+
+            Self::POP if line.len() != 1 || !line[0].is_reg() => {
+                Err(SyntaxErrorKind::ExpectedReg(self))
+            } // reg
+            _ => Ok(()),
+        }
     }
 }

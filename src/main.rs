@@ -10,6 +10,6 @@ fn main() {
     f.read_to_string(&mut content).unwrap();
     assemble(&content).unwrap_or_else(|e| {
         println!("{e:?}");
-        exit(e as i32);
+        exit(From::from(&e));
     });
 }
