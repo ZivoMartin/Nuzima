@@ -134,11 +134,11 @@ impl TryFrom<Vec<Word>> for Line {
 }
 
 macro_rules! inj_reg_or_imm {
-    ($w:expr, $label:ident) => {
+    ($w:expr, $label:ident, $flag_shift:expr) => {
         match &$w.content {
             WordContent::Register(reg) => Into::<u8>::into(*reg) as u32,
-            WordContent::Number(x) => 1 << 25 | *x as u32,
-            WordContent::Label(lab) => *$label.get(lab).unwrap() as u32,
+            WordContent::Number(x) => 1 << $flag_shift | *x as u32,
+            WordContent::Label(lab) => 1 << $flag_shift | *$label.get(lab).unwrap() as u32,
             _ => unreachable!(),
         }
     };
@@ -152,36 +152,54 @@ impl Line {
         rest_of_line: Vec<&'a Word>,
     ) -> Vec<u8> {
         let mut instr: u32 = (Into::<u8>::into(op_code) as u32) << 27;
+        println!("{labels:?}");
         instr |= match rest_of_line.len() {
-            1 => inj_reg_or_imm!(rest_of_line[0], labels),
+            1 => match op_code {
+                OpCode::JMP(jcode) => {
+                    (Into::<u8>::into(jcode) as u32) << 23
+                        | inj_reg_or_imm!(rest_of_line[0], labels, 22)
+                }
+                _ => inj_reg_or_imm!(rest_of_line[0], labels, 26),
+            },
             2 => {
-                Into::<u8>::into(rest_of_line[0].get_reg().unwrap()) as u32
-                    | inj_reg_or_imm!(rest_of_line[1], labels)
+                (Into::<u8>::into(rest_of_line[0].get_reg().unwrap()) as u32) << 24
+                    | inj_reg_or_imm!(rest_of_line[1], labels, 23)
             }
             _ => 0,
         };
         println!("{instr:b}");
-        instr.to_be_bytes().to_vec()
+        let res = instr.to_be_bytes().to_vec();
+        res
     }
 
-    fn get_binary_instruction_str(&self, labels: &HashMap<String, usize>, s: &String) -> Vec<u8> {
-        todo!()
+    fn skip_labels_decl<'a>(
+        words: &mut impl Iterator<Item = &'a Word>,
+    ) -> (Option<&'a Word>, Vec<String>) {
+        let mut labels = Vec::new();
+        (
+            loop {
+                if let Some(w) = words.next() {
+                    match &w.content {
+                        WordContent::LabelDeclaration(lab) => labels.push(lab.to_string()),
+                        _ => break Some(w),
+                    }
+                } else {
+                    return (None, labels);
+                }
+            },
+            labels,
+        )
     }
 
     pub fn get_binary_instruction(&self, labels: &HashMap<String, usize>) -> Vec<u8> {
         let mut words = self.instruction.iter();
-        let word = loop {
-            if let Some(w) = words.next() {
-                if !w.is_label_decl() {
-                    break w;
-                }
-            } else {
-                return Vec::new();
-            }
+        let word = match Self::skip_labels_decl(&mut words).0 {
+            Some(w) => w,
+            None => return Vec::new(),
         };
 
         if let Some(s) = word.get_str() {
-            self.get_binary_instruction_str(labels, s)
+            s.as_bytes().to_vec()
         } else {
             self.get_binary_instruction_op_code(
                 labels,
@@ -189,5 +207,18 @@ impl Line {
                 words.collect(),
             )
         }
+    }
+
+    /// This function returns all labels present on the line and the size of the line in bit
+    pub fn get_line_info(&self) -> (Vec<String>, usize) {
+        let (word, labels) = Self::skip_labels_decl(&mut self.instruction.iter());
+        (
+            labels,
+            match word {
+                Some(w) if w.is_str() => w.get_str().unwrap().as_bytes().len(),
+                Some(_) => 4,
+                None => 0,
+            },
+        )
     }
 }

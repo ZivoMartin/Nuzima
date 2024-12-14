@@ -146,7 +146,9 @@ impl WordContent {
                 Err(_) => return Err(SyntaxErrorKind::InvalidNumber(pure_content)),
             }),
             WordKind::DoubleQuote => {
-                WordContent::Str(pure_content[1..pure_content.len() - 1].to_string())
+                let mut content = pure_content[1..pure_content.len() - 1].to_string();
+                content.push('\0');
+                WordContent::Str(content)
             }
             WordKind::SingleQuote => {
                 WordContent::Number(Self::extract_number_from_single_quote(&pure_content)?)
@@ -225,6 +227,13 @@ impl Word {
     pub fn is_reg_or_imm(&self) -> bool {
         match self.content {
             WordContent::Number(_) | WordContent::Label(_) | WordContent::Register(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_str(&self) -> bool {
+        match self.content {
+            WordContent::Str(_) => true,
             _ => false,
         }
     }

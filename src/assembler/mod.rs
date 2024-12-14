@@ -49,7 +49,7 @@ pub struct Assembler {
     current_line: Vec<Word>,
     /// Each element of the vector is an instruction composed of different word
     instructions: Vec<Line>,
-    /// Link a label to its line, also used to verify the existence of labels when parsing the code
+    /// Link a label to its address, also used to verify the existence of labels when parsing the code
     labels: HashMap<String, usize>,
 }
 
@@ -104,11 +104,6 @@ impl Assembler {
         Ok(())
     }
 
-    /// This function simply put quotes line after all the label associated lines
-    fn put_quotes_lines_at_end(&mut self) {
-        todo!()
-    }
-
     fn check_labels_validity(&self) -> SyntaxResult<()> {
         for (i, line) in self.instructions.iter().enumerate() {
             if let Some(lab) = line.get().iter().find(|word| {
@@ -132,12 +127,23 @@ impl Assembler {
         Ok(())
     }
 
+    fn correct_labels_addresses(&mut self) {
+        let mut addr = 0;
+        for line in &self.instructions {
+            let (labels, size) = line.get_line_info();
+            for l in labels {
+                self.labels.insert(l, addr);
+            }
+            addr += size;
+        }
+    }
+
     fn conclude(&mut self) -> SyntaxResult<()> {
         self.current_line
             .push(cast_result(self.word_builder.end_of_file(), self.line())?);
         self.push_current_line()?;
         self.check_labels_validity()?;
-        //self.put_quotes_lines_at_end();
+        self.correct_labels_addresses();
         Ok(())
     }
 
