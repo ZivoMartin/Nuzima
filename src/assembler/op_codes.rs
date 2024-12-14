@@ -10,8 +10,8 @@ as_number!(
     enum JCODE {
         JMP,
         JE,
-        JL,
         JH,
+        JL,
         JLE,
         JHE,
     },

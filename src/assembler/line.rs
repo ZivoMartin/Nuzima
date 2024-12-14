@@ -152,12 +152,11 @@ impl Line {
         rest_of_line: Vec<&'a Word>,
     ) -> Vec<u8> {
         let mut instr: u32 = (Into::<u8>::into(op_code) as u32) << 27;
-        println!("{labels:?}");
         instr |= match rest_of_line.len() {
             1 => match op_code {
                 OpCode::JMP(jcode) => {
-                    (Into::<u8>::into(jcode) as u32) << 23
-                        | inj_reg_or_imm!(rest_of_line[0], labels, 22)
+                    (Into::<u8>::into(jcode) as u32) << 24
+                        | inj_reg_or_imm!(rest_of_line[0], labels, 23)
                 }
                 _ => inj_reg_or_imm!(rest_of_line[0], labels, 26),
             },
