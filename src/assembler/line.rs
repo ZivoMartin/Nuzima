@@ -1,7 +1,8 @@
-use std::vec::IntoIter;
+use std::{collections::HashMap, vec::IntoIter};
 
 use super::{
     errors::{SyntaxErrorKind, SyntaxResultKind},
+    op_codes::OpCode,
     word::{Word, WordContent},
 };
 
@@ -129,5 +130,64 @@ impl TryFrom<Vec<Word>> for Line {
         Ok(Self {
             instruction: extract(instruction)?,
         })
+    }
+}
+
+macro_rules! inj_reg_or_imm {
+    ($w:expr, $label:ident) => {
+        match &$w.content {
+            WordContent::Register(reg) => Into::<u8>::into(*reg) as u32,
+            WordContent::Number(x) => 1 << 25 | *x as u32,
+            WordContent::Label(lab) => *$label.get(lab).unwrap() as u32,
+            _ => unreachable!(),
+        }
+    };
+}
+
+impl Line {
+    fn get_binary_instruction_op_code<'a>(
+        &self,
+        labels: &HashMap<String, usize>,
+        op_code: OpCode,
+        rest_of_line: Vec<&'a Word>,
+    ) -> Vec<u8> {
+        let mut instr: u32 = (Into::<u8>::into(op_code) as u32) << 27;
+        instr |= match rest_of_line.len() {
+            1 => inj_reg_or_imm!(rest_of_line[0], labels),
+            2 => {
+                Into::<u8>::into(rest_of_line[0].get_reg().unwrap()) as u32
+                    | inj_reg_or_imm!(rest_of_line[1], labels)
+            }
+            _ => 0,
+        };
+        println!("{instr:b}");
+        instr.to_be_bytes().to_vec()
+    }
+
+    fn get_binary_instruction_str(&self, labels: &HashMap<String, usize>, s: &String) -> Vec<u8> {
+        todo!()
+    }
+
+    pub fn get_binary_instruction(&self, labels: &HashMap<String, usize>) -> Vec<u8> {
+        let mut words = self.instruction.iter();
+        let word = loop {
+            if let Some(w) = words.next() {
+                if !w.is_label_decl() {
+                    break w;
+                }
+            } else {
+                return Vec::new();
+            }
+        };
+
+        if let Some(s) = word.get_str() {
+            self.get_binary_instruction_str(labels, s)
+        } else {
+            self.get_binary_instruction_op_code(
+                labels,
+                word.get_op_code().unwrap(),
+                words.collect(),
+            )
+        }
     }
 }

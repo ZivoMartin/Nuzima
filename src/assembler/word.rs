@@ -187,6 +187,27 @@ impl Word {
         }
     }
 
+    pub fn get_op_code(&self) -> Option<OpCode> {
+        match self.content {
+            WordContent::OpCode(opcode) => Some(opcode),
+            _ => None,
+        }
+    }
+
+    pub fn get_str<'a>(&'a self) -> Option<&'a String> {
+        match &self.content {
+            WordContent::Str(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn get_reg(&self) -> Option<Register> {
+        match &self.content {
+            WordContent::Register(r) => Some(*r),
+            _ => None,
+        }
+    }
+
     pub fn is_label_decl(&self) -> bool {
         match self.content {
             WordContent::LabelDeclaration(_) => true,

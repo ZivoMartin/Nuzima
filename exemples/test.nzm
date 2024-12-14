@@ -1,6 +1,5 @@
-mov r0, hello_world
-mov r1, '\n'    
-int 1 ; Write on stdout
+mov r1, '\n'
+push r1    
+pop r2
+cmp r2, '\''    
 halt
-
-hello_world: "Hello, World !\n"

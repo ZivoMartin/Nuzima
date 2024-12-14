@@ -1,6 +1,5 @@
 mov r0, hello_world
 int 1 ; Write on stdout
-mov r1, 'h'    
 halt
 
 hello_world: "Hello, World !\n"

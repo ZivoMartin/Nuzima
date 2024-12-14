@@ -10,7 +10,11 @@ use errors::{cast_result, SyntaxErrorKind, SyntaxResult};
 use line::Line;
 use word::{Word, WordBuilder, WordContent, WordRequest};
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::{Error as IoError, Write},
+};
 
 fn display_lines(lines: &Vec<Line>) {
     println!(
@@ -100,10 +104,12 @@ impl Assembler {
         Ok(())
     }
 
-    fn conclude(&mut self) -> SyntaxResult<()> {
-        self.current_line
-            .push(cast_result(self.word_builder.end_of_file(), self.line())?);
-        self.push_current_line()?;
+    /// This function simply put quotes line after all the label associated lines
+    fn put_quotes_lines_at_end(&mut self) {
+        todo!()
+    }
+
+    fn check_labels_validity(&self) -> SyntaxResult<()> {
         for (i, line) in self.instructions.iter().enumerate() {
             if let Some(lab) = line.get().iter().find(|word| {
                 if let WordContent::Label(lab) = &word.content {
@@ -125,9 +131,25 @@ impl Assembler {
         }
         Ok(())
     }
+
+    fn conclude(&mut self) -> SyntaxResult<()> {
+        self.current_line
+            .push(cast_result(self.word_builder.end_of_file(), self.line())?);
+        self.push_current_line()?;
+        self.check_labels_validity()?;
+        //self.put_quotes_lines_at_end();
+        Ok(())
+    }
+
+    fn generate_binary(&self, mut output_file: File) -> Result<(), IoError> {
+        for line in &self.instructions {
+            output_file.write(&line.get_binary_instruction(&self.labels))?;
+        }
+        Ok(())
+    }
 }
 
-pub fn assemble(text: &str) -> SyntaxResult<()> {
+pub fn assemble(output_file: File, text: &str) -> SyntaxResult<()> {
     if text.is_empty() {
         return cast_result(Err(SyntaxErrorKind::EmptyText), 0);
     }
@@ -139,5 +161,8 @@ pub fn assemble(text: &str) -> SyntaxResult<()> {
 
     assembler.conclude()?;
     display_lines(&assembler.instructions);
+    assembler
+        .generate_binary(output_file)
+        .expect("Failed to generte binary");
     Ok(())
 }
