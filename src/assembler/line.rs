@@ -147,7 +147,7 @@ macro_rules! inj_reg_or_imm {
 impl Line {
     fn get_binary_instruction_op_code<'a>(
         &self,
-        labels: &HashMap<String, usize>,
+        labels: &HashMap<String, u64>,
         op_code: OpCode,
         rest_of_line: Vec<&'a Word>,
     ) -> Vec<u8> {
@@ -190,7 +190,7 @@ impl Line {
         )
     }
 
-    pub fn get_binary_instruction(&self, labels: &HashMap<String, usize>) -> Vec<u8> {
+    pub fn get_binary_instruction(&self, labels: &HashMap<String, u64>) -> Vec<u8> {
         let mut words = self.instruction.iter();
         let word = match Self::skip_labels_decl(&mut words).0 {
             Some(w) => w,

@@ -50,7 +50,7 @@ pub struct Assembler {
     /// Each element of the vector is an instruction composed of different word
     instructions: Vec<Line>,
     /// Link a label to its address, also used to verify the existence of labels when parsing the code
-    labels: HashMap<String, usize>,
+    labels: HashMap<String, u64>,
 }
 
 impl Assembler {
@@ -67,7 +67,7 @@ impl Assembler {
         if let WordContent::LabelDeclaration(lab) = &word.content {
             if self
                 .labels
-                .insert(lab.to_string(), self.instructions.len())
+                .insert(lab.to_string(), self.instructions.len() as u64)
                 .is_some()
             {
                 return cast_result(
@@ -127,6 +127,14 @@ impl Assembler {
         Ok(())
     }
 
+    fn check_if_main_exists(&self) -> SyntaxResult<()> {
+        if !self.labels.contains_key("main") {
+            cast_result(Err(SyntaxErrorKind::NoMain), 0)
+        } else {
+            Ok(())
+        }
+    }
+
     fn correct_labels_addresses(&mut self) {
         let mut addr = 0;
         for line in &self.instructions {
@@ -134,11 +142,12 @@ impl Assembler {
             for l in labels {
                 self.labels.insert(l, addr);
             }
-            addr += size;
+            addr += size as u64;
         }
     }
 
     fn conclude(&mut self) -> SyntaxResult<()> {
+        self.check_if_main_exists()?;
         self.current_line
             .push(cast_result(self.word_builder.end_of_file(), self.line())?);
         self.push_current_line()?;
@@ -148,6 +157,8 @@ impl Assembler {
     }
 
     fn generate_binary(&self, mut output_file: File) -> Result<(), IoError> {
+        let origin = *self.labels.get("main").unwrap() as u32;
+        output_file.write(&origin.to_be_bytes())?;
         for line in &self.instructions {
             output_file.write(&line.get_binary_instruction(&self.labels))?;
         }

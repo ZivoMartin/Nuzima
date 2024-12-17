@@ -5,6 +5,7 @@ use super::op_codes::OpCode;
 pub enum SyntaxErrorKind {
     SyntaxError,
     EmptyText,
+    NoMain,
     InvalidSingleQuote(String),
     InvalidBackSlash(char),
     BackSlashNeeded(char),
@@ -33,6 +34,7 @@ impl Debug for SyntaxErrorKind {
             match self {
                 Self::SyntaxError => String::from("Syntax error"),
                 Self::EmptyText => String::from("The file is empty."),
+                Self::NoMain => String::from("Main label has not been found."),
                 Self::InvalidSingleQuote(pure_content) =>
                     format!("The quote is invalid. \"{pure_content}\" has been found."),
                 Self::InvalidBackSlash(c) => format!("The char '{c}' has been found after a backslash, this char is not allowed as a backslash char."),
@@ -108,6 +110,7 @@ impl From<&SyntaxErrorKind> for i32 {
             SyntaxErrorKind::ExpectedReg(_) => 18,
             SyntaxErrorKind::ExpectedRegOrImm(_) => 19,
             SyntaxErrorKind::ExpectedNothing(_) => 20,
+            SyntaxErrorKind::NoMain => 21,
         }
     }
 }
