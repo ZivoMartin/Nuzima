@@ -1,4 +1,4 @@
-#**Nuzima Assembler**
+# **Nuzima Assembler**
 
 The Nuzima Assembler is a lightweight assembly tool designed for generating Nuzima bytecode. This assembler allows you to write and compile low-level instructions that can be executed by the Zivojinovic Virtual Machine (ZVM).
 Features
